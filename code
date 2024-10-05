@@ -1,0 +1,108 @@
+import Foundation
+
+struct Stock: Codable {
+    let symbol: String
+    let name: String
+    let price: String
+    let changePercent: String
+    
+    enum CodingKeys: String, CodingKey {
+        case symbol = "01. symbol"
+        case name = "02. name"
+        case price = "05. price"
+        case changePercent = "10. change percent"
+    }
+}
+import Foundation
+
+class StockService {
+    private let apiKey = "YOUR_API_KEY"
+    
+    func fetchStock(for symbol: String, completion: @escaping (Stock?, Error?) -> Void) {
+        let urlString = "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=\(symbol)&apikey=\(apiKey)"
+        guard let url = URL(string: urlString) else { return }
+        
+        let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error = error {
+                completion(nil, error)
+                return
+            }
+            guard let data = data else {
+                completion(nil, nil)
+                return
+            }
+            
+            do {
+                let stockResponse = try JSONDecoder().decode([String: Stock].self, from: data)
+                let stock = stockResponse["Global Quote"]
+                completion(stock, nil)
+            } catch {
+                completion(nil, error)
+            }
+        }
+        task.resume()
+    }
+}
+import UIKit
+
+class ViewController: UIViewController {
+    
+    @IBOutlet weak var searchBar: UISearchBar!
+    @IBOutlet weak var stockNameLabel: UILabel!
+    @IBOutlet weak var stockPriceLabel: UILabel!
+    @IBOutlet weak var stockChangeLabel: UILabel!
+    @IBOutlet weak var searchButton: UIButton!
+    @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
+    
+    let stockService = StockService()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        searchBar.delegate = self
+        activityIndicator.hidesWhenStopped = true
+    }
+    
+    @IBAction func searchButtonTapped(_ sender: UIButton) {
+        guard let symbol = searchBar.text, !symbol.isEmpty else {
+            displayError("Please enter a valid stock symbol.")
+            return
+        }
+        searchForStock(symbol: symbol)
+    }
+
+    private func searchForStock(symbol: String) {
+        activityIndicator.startAnimating()
+        stockService.fetchStock(for: symbol) { [weak self] stock, error in
+            DispatchQueue.main.async {
+                self?.activityIndicator.stopAnimating()
+                if let error = error {
+                    self?.displayError(error.localizedDescription)
+                    return
+                }
+                if let stock = stock {
+                    self?.updateUI(with: stock)
+                } else {
+                    self?.displayError("No data found for this stock symbol.")
+                }
+            }
+        }
+    }
+    
+    private func updateUI(with stock: Stock) {
+        stockNameLabel.text = stock.name
+        stockPriceLabel.text = "Price: \(stock.price)"
+        stockChangeLabel.text = "Change: \(stock.changePercent)"
+    }
+    
+    private func displayError(_ message: String) {
+        let alert = UIAlertController(title: "Error", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+        present(alert, animated: true, completion: nil)
+    }
+}
+
+extension ViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchButtonTapped(searchButton)
+    }
+}
